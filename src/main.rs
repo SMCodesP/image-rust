@@ -2,10 +2,11 @@ use aws_config::{BehaviorVersion, Region};
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{config::{ProvideCredentials, SharedCredentialsProvider}, Client as S3Client};
 use base64::{engine::general_purpose, Engine};
-use image::{ImageFormat, ImageError};
+use image::{EncodableLayout, ImageError, ImageFormat};
 use lambda_runtime::{service_fn, LambdaEvent, Error as LambdaError};
 use serde_json::{json, Value};
 use std::io::Cursor;
+use webp::{Encoder as WebPEncoder, PixelLayout};
 
 // const MAX_IMAGE_SIZE: usize = 10 * 1024 * 1024; // 10 MB, ajuste conforme necessário
 const TRANSFORMED_IMAGE_CACHE_TTL: &str = "max-age=3600";
@@ -97,7 +98,7 @@ async fn process_image(
 ) -> Result<Vec<u8>, ImageError> {
     let mut img = image::load_from_memory(image_data)?;
 
-    // Parse operations
+    // Parse operations (mantido igual)
     let operations_map: std::collections::HashMap<_, _> = operations
         .split(',')
         .filter_map(|op| {
@@ -110,21 +111,27 @@ async fn process_image(
         img = img.resize(width, img.height(), image::imageops::FilterType::Triangle);
     }
 
-    // Formato
-    let mut format = ImageFormat::Jpeg;
-    if let Some(fmt) = operations_map.get("format") {
-        format = match *fmt {
-            "png" => ImageFormat::Png,
-            "webp" => ImageFormat::WebP,
-            "jpeg" | _ => ImageFormat::Jpeg,
-        };
+    // Determinar formato e content_type
+    let (format, _content_type) = match operations_map.get("format") {
+        Some(&"png") => (ImageFormat::Png, "image/png"),
+        Some(&"webp") => (ImageFormat::WebP, "image/webp"),
+        _ => (ImageFormat::Jpeg, "image/jpeg"),
+    };
+
+    let mut buf = Vec::new();
+
+    // Codificação específica para WebP
+    if let ImageFormat::WebP = format {
+        let rgba = img.to_rgba8();
+        let encoder = WebPEncoder::new(&rgba, PixelLayout::Rgba, img.width(), img.height());
+        let quality = 75.0;
+        let webp_data = encoder.encode(quality);
+        buf = webp_data.as_bytes().to_vec();
+    } else {
+        img.write_to(&mut Cursor::new(&mut buf), format)?;
     }
 
-    // Escrever a imagem diretamente no buffer sem copiar
-    let mut buf = Cursor::new(Vec::new());
-    img.write_to(&mut buf, format)?;
-
-    Ok(buf.into_inner())
+    Ok(buf)
 }
 
 fn send_error(status_code: u16, message: &str, error: &str) -> Result<Value, LambdaError> {
