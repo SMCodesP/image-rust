@@ -1,0 +1,15 @@
+[package]
+name = "hello_lambda"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aws-config = {version = "1.5.10", features = ["behavior-version-latest"]}
+aws-credential-types = {version = "1.2.1", features = ["hardcoded-credentials"]}
+aws-sdk-s3 = "1.64.0"
+base64 = "0.22.1"
+image = { version = "0.25.5", features = ["webp"] }
+lambda_runtime = "0.13.0"
+serde_json = "1.0"
+tokio = { version = "1.41.1", features = ["full"] }
+webp = "0.3.0"
