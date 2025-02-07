@@ -1,8 +1,8 @@
 mod image_processor;
 
-use aws_config::{BehaviorVersion};
+use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
-use aws_sdk_sns::Client as SnsClient;
+use base64::{prelude::BASE64_STANDARD, Engine};
 use lambda_runtime::{service_fn, LambdaEvent, Error as LambdaError};
 use serde_json::{json, Value};
 
@@ -99,7 +99,7 @@ fn build_response(status: u16, content_type: &str, body: &[u8]) -> Value {
             "Content-Type": content_type,
             "Cache-Control": TRANSFORMED_IMAGE_CACHE_TTL,
         },
-        "body": base64::encode(body),
+        "body": BASE64_STANDARD.encode(body),
         "isBase64Encoded": true
     })
 }
