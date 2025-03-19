@@ -1,0 +1,5 @@
+aws_region = "sa-east-1
+aws_profile = "default"
+project_name = "meu-projeto"
+destination_bucket_name = "meu-bucket-destino"
+lambda_function_name = "image-rust" 

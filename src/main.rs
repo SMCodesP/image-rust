@@ -56,7 +56,7 @@ async fn background_processing(
     
     client
         .put_object()
-        .bucket("img-resizo")
+        .bucket("img-optimization-cache")
         .key(target_path)
         .content_type(&content_type)
         .body(image_data.into())
@@ -66,7 +66,6 @@ async fn background_processing(
     Ok(())
 }
 
-// Componentes refatorados
 fn extract_path_components(path: &str) -> (&str, String) {
     let mut parts: Vec<_> = path.split('/').collect();
     let operations = parts.pop().unwrap_or("");
@@ -82,7 +81,7 @@ async fn create_s3_client() -> S3Client {
 async fn download_original_image(client: &S3Client, path: &str) -> Result<(Vec<u8>, String), LambdaError> {
     let response = client
         .get_object()
-        .bucket("img-resizo")
+        .bucket("brscans-media")
         .key(path)
         .send()
         .await?;
