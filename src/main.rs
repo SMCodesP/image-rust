@@ -1,5 +1,7 @@
 mod image_processor;
 
+use std::time::Instant;
+
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
 use base64::{prelude::BASE64_STANDARD, Engine};
@@ -19,9 +21,14 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     let path = event["rawPath"].as_str().unwrap_or("/");
     
     let (operations, original_path) = extract_path_components(path);
+
+    let start_client = Instant::now();
     let s3_client = create_s3_client().await;
+    println!("Tempo para criar cliente S3: {} ms", start_client.elapsed().as_millis());
     
+    let start_download = Instant::now();
     let (image_data, content_type) = download_original_image(&s3_client, &original_path).await?;
+    println!("Tempo para baixar imagem: {} ms", start_download.elapsed().as_millis());
     let processed_image = image_processor::process_image(&image_data, operations).await?;
 
     let bg_client = s3_client.clone();
@@ -30,6 +37,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     let bg_image = processed_image.clone();
     let bg_content_type = content_type.clone();
 
+    let start_background = Instant::now();
     tokio::spawn(async move {
         if let Err(e) = background_processing(
             bg_client,
@@ -41,6 +49,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
             eprintln!("Background processing failed: {:?}", e);
         }
     });
+    println!("Tempo para iniciar processamento em background: {} ms", start_background.elapsed().as_millis());
 
     Ok(build_response(200, &content_type, &processed_image))
 }
@@ -56,7 +65,7 @@ async fn background_processing(
     
     client
         .put_object()
-        .bucket("img-resizo")
+        .bucket("comprautos-static-optimized")
         .key(target_path)
         .content_type(&content_type)
         .body(image_data.into())
@@ -75,14 +84,14 @@ fn extract_path_components(path: &str) -> (&str, String) {
 }
 
 async fn create_s3_client() -> S3Client {
-    let config = aws_config::load_defaults(BehaviorVersion::latest()).await;
-    S3Client::new(&config)
+    let shared_config = aws_config::load_defaults(BehaviorVersion::latest()).await;
+    S3Client::new(&shared_config)
 }
 
 async fn download_original_image(client: &S3Client, path: &str) -> Result<(Vec<u8>, String), LambdaError> {
     let response = client
         .get_object()
-        .bucket("img-resizo")
+        .bucket("comprautos-static")
         .key(path)
         .send()
         .await?;

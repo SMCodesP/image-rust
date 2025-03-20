@@ -1,5 +1,5 @@
 use image::{EncodableLayout, ImageError, ImageFormat};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 use std::io::Cursor;
 use webp::{Encoder as WebPEncoder, PixelLayout};
 
@@ -7,7 +7,10 @@ pub async fn process_image(
     image_data: &[u8],
     operations: &str,
 ) -> Result<Vec<u8>, ImageError> {
+    let start_total = Instant::now();
+    let start = Instant::now();
     let mut img = image::load_from_memory(image_data)?;
+    println!("Tempo para carregar imagem: {} ms", start.elapsed().as_millis());
 
     // Parse das operações
     let operations_map: HashMap<_, _> = operations
@@ -24,11 +27,14 @@ pub async fn process_image(
         .unwrap_or(75);
 
     // Aplicar redimensionamento (width)
+    let start_resize = Instant::now();
     if let Some(width) = operations_map.get("width").and_then(|w| w.parse::<u32>().ok()) {
         img = img.resize(width, img.height(), image::imageops::FilterType::Triangle);
     }
+    println!("Tempo para redimensionar imagem: {} ms", start_resize.elapsed().as_millis());
 
     // Determinar formato e content_type
+    let start_encode = Instant::now();
     let format = match operations_map.get("format") {
         Some(&"png") => ImageFormat::Png,
         Some(&"webp") => ImageFormat::WebP,
@@ -48,6 +54,8 @@ pub async fn process_image(
     } else {
         img.write_to(&mut Cursor::new(&mut buf), format)?;
     }
+    println!("Tempo para codificar imagem: {} ms", start_encode.elapsed().as_millis());
 
+    println!("Tempo total da função: {} ms", start_total.elapsed().as_millis());
     Ok(buf)
 }
