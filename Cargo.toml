@@ -19,6 +19,6 @@ webp = "0.3.0"
 [profile.release]
 lto = true
 codegen-units = 1
-opt-level = 2
+opt-level = 3
 panic = "abort"
 incremental = false
