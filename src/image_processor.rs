@@ -1,7 +1,9 @@
-use image::{EncodableLayout, ImageError, ImageFormat};
+use image::{DynamicImage, EncodableLayout, GenericImageView, ImageBuffer, ImageError, ImageFormat, Rgb, Rgba};
 use std::{collections::HashMap, time::Instant};
 use std::io::Cursor;
 use webp::{Encoder as WebPEncoder, PixelLayout};
+use fast_image_resize::{self as fir, IntoImageView};
+use fast_image_resize::images::Image;
 
 pub async fn process_image(
     image_data: &[u8],
@@ -35,14 +37,41 @@ pub async fn process_image(
         .and_then(|q| q.parse::<u8>().ok())
         .unwrap_or(75);
 
-    // Aplicar redimensionamento (width)
     let start_resize = Instant::now();
-    if let Some(width) = operations_map.get("width").and_then(|w| w.parse::<u32>().ok()) {
-        img = img.resize(width, img.height(), image::imageops::FilterType::Triangle);
+    if let Some(width_str) = operations_map.get("width") {
+        if let Ok(target_width) = width_str.parse::<u32>() {
+            let (orig_width, orig_height) = img.dimensions();
+            let target_height = ((orig_height as f32) * (target_width as f32 / orig_width as f32))
+                .round() as u32;
+
+            let pixel_type = img.pixel_type().expect("Falha ao obter o tipo de pixel");
+
+            let mut dst_image = Image::new(target_width, target_height, pixel_type);
+
+            let start_resize = Instant::now();
+            let mut resizer = fir::Resizer::new();
+            resizer.resize(&img, &mut dst_image, None).unwrap();
+            println!("Tempo para redimensionar imagem: {} ms", start_resize.elapsed().as_millis());
+
+            let dst_buf = dst_image.into_vec();
+
+            img = match pixel_type {
+                fir::PixelType::U8x3 => {
+                    let buf = ImageBuffer::<Rgb<u8>, _>::from_raw(target_width, target_height, dst_buf)
+                        .expect("Falha ao criar imagem RGB");
+                    DynamicImage::ImageRgb8(buf)
+                }
+                fir::PixelType::U8x4 => {
+                    let buf = ImageBuffer::<Rgba<u8>, _>::from_raw(target_width, target_height, dst_buf)
+                        .expect("Falha ao criar imagem RGBA");
+                    DynamicImage::ImageRgba8(buf)
+                }
+                _ => panic!("Tipo de pixel não suportado para reconstrução dinâmica"),
+            };
+        }
     }
     println!("Tempo para redimensionar imagem: {} ms", start_resize.elapsed().as_millis());
 
-    // Determinar formato e content_type
     let start_encode = Instant::now();
     let format = match operations_map.get("format") {
         Some(&"png") => ImageFormat::Png,
