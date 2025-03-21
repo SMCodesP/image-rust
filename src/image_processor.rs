@@ -5,8 +5,17 @@ use webp::{Encoder as WebPEncoder, PixelLayout};
 
 pub async fn process_image(
     image_data: &[u8],
+    content_type: &str,
     operations: &str,
 ) -> Result<Vec<u8>, ImageError> {
+    println!("Current content type: {}", content_type);
+    let current_format = match content_type {
+        "image/png" => ImageFormat::Png,
+        "image/webp" => ImageFormat::WebP,
+        "image/avif" => ImageFormat::Avif,
+        _ => ImageFormat::Jpeg,
+    };
+
     let start_total = Instant::now();
     let start = Instant::now();
     let mut img = image::load_from_memory(image_data)?;
@@ -45,14 +54,14 @@ pub async fn process_image(
     let mut buf = Vec::new();
 
     // Codificação específica para WebP
-    if let ImageFormat::WebP = format {
+    if current_format == format || ImageFormat::WebP != format {
+        img.write_to(&mut Cursor::new(&mut buf), format)?;
+    } else {
         let rgba = img.to_rgba8();
         let encoder = WebPEncoder::new(&rgba, PixelLayout::Rgba, img.width(), img.height());
         let quality = quality as f32;
         let webp_data = encoder.encode(quality);
         buf = webp_data.as_bytes().to_vec();
-    } else {
-        img.write_to(&mut Cursor::new(&mut buf), format)?;
     }
     println!("Tempo para codificar imagem: {} ms", start_encode.elapsed().as_millis());
 

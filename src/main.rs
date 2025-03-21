@@ -29,7 +29,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     let start_download = Instant::now();
     let (image_data, content_type) = download_original_image(&s3_client, &original_path).await?;
     println!("Tempo para baixar imagem: {} ms", start_download.elapsed().as_millis());
-    let processed_image = image_processor::process_image(&image_data, operations).await?;
+    let processed_image = image_processor::process_image(&image_data, &content_type, operations).await?;
 
     let bg_client = s3_client.clone();
     let bg_path = original_path.clone();
