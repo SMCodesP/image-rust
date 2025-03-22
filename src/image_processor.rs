@@ -21,7 +21,7 @@ pub async fn process_image(
     let start_total = Instant::now();
     let start = Instant::now();
     let mut img = image::load_from_memory(image_data)?;
-    println!("Tempo para carregar imagem: {} ms", start.elapsed().as_millis());
+    println!("Time to load image: {} ms", start.elapsed().as_millis());
 
     // Parse das operações
     let operations_map: HashMap<_, _> = operations
@@ -44,33 +44,33 @@ pub async fn process_image(
             let target_height = ((orig_height as f32) * (target_width as f32 / orig_width as f32))
                 .round() as u32;
 
-            let pixel_type = img.pixel_type().expect("Falha ao obter o tipo de pixel");
+            let pixel_type = img.pixel_type().expect("Failed to get pixel type");
 
             let mut dst_image = Image::new(target_width, target_height, pixel_type);
 
             let start_resize = Instant::now();
             let mut resizer = fir::Resizer::new();
             resizer.resize(&img, &mut dst_image, None).unwrap();
-            println!("Tempo para redimensionar imagem: {} ms", start_resize.elapsed().as_millis());
+            println!("Time to resize image: {} ms", start_resize.elapsed().as_millis());
 
             let dst_buf = dst_image.into_vec();
 
             img = match pixel_type {
                 fir::PixelType::U8x3 => {
                     let buf = ImageBuffer::<Rgb<u8>, _>::from_raw(target_width, target_height, dst_buf)
-                        .expect("Falha ao criar imagem RGB");
+                        .expect("Failed to create RGB image");
                     DynamicImage::ImageRgb8(buf)
                 }
                 fir::PixelType::U8x4 => {
                     let buf = ImageBuffer::<Rgba<u8>, _>::from_raw(target_width, target_height, dst_buf)
-                        .expect("Falha ao criar imagem RGBA");
+                        .expect("Failed to create RGBA image");
                     DynamicImage::ImageRgba8(buf)
                 }
-                _ => panic!("Tipo de pixel não suportado para reconstrução dinâmica"),
+                _ => panic!("Unsupported pixel type for dynamic reconstruction"),
             };
         }
     }
-    println!("Tempo para redimensionar imagem: {} ms", start_resize.elapsed().as_millis());
+    println!("Time to resize image: {} ms", start_resize.elapsed().as_millis());
 
     let start_encode = Instant::now();
     let format = match operations_map.get("format") {
@@ -92,8 +92,8 @@ pub async fn process_image(
         let webp_data = encoder.encode(quality);
         buf = webp_data.as_bytes().to_vec();
     }
-    println!("Tempo para codificar imagem: {} ms", start_encode.elapsed().as_millis());
+    println!("Time to encode image: {} ms", start_encode.elapsed().as_millis());
 
-    println!("Tempo total da função: {} ms", start_total.elapsed().as_millis());
+    println!("Total function time: {} ms", start_total.elapsed().as_millis());
     Ok(buf)
 }

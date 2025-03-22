@@ -24,11 +24,11 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
 
     let start_client = Instant::now();
     let s3_client = create_s3_client().await;
-    println!("Tempo para criar cliente S3: {} ms", start_client.elapsed().as_millis());
+    println!("Time to create S3 client: {} ms", start_client.elapsed().as_millis());
     
     let start_download = Instant::now();
     let (image_data, content_type) = download_original_image(&s3_client, &original_path).await?;
-    println!("Tempo para baixar imagem: {} ms", start_download.elapsed().as_millis());
+    println!("Time to download image: {} ms", start_download.elapsed().as_millis());
     let processed_image = image_processor::process_image(&image_data, &content_type, operations).await?;
 
     let bg_client = s3_client.clone();
@@ -49,7 +49,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
             eprintln!("Background processing failed: {:?}", e);
         }
     });
-    println!("Tempo para iniciar processamento em background: {} ms", start_background.elapsed().as_millis());
+    println!("Time to start background processing: {} ms", start_background.elapsed().as_millis());
 
     Ok(build_response(200, &content_type, &processed_image))
 }
