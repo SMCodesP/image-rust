@@ -1,9 +1,8 @@
 import requests
 import concurrent.futures
 import time
-from collections import defaultdict
+import sys
 
-# Configuração das URLs base para cada domínio e formato
 urls = {
     "codes": {
         "webp": "https://d270zblqqzt1pj.cloudfront.net/media/dealerships/17/vehicles/201/ed3c2f00fa69494198fd6122c1f23966.webp?format=webp&width=",
@@ -18,7 +17,16 @@ urls = {
 }
 
 def test_url(domain, formato, width):
-    url = f"{urls[domain][formato]}{width}&&&"
+    """
+    Realiza a requisição para a URL formada com base no domínio, formato e largura,
+    e mede:
+      - Tempo total de resposta
+      - Requisições por segundo
+      - Tempo por requisição (ms)
+      - Taxa de transferência (kB/s)
+      - Tamanho da imagem (Bytes)
+    """
+    url = f"{urls[domain][formato]}{width}"
     start_time = time.time()
     response = requests.get(url)
     elapsed_time = time.time() - start_time
@@ -28,8 +36,8 @@ def test_url(domain, formato, width):
     transfer_rate = len(response.content) / 1024 / elapsed_time if elapsed_time > 0 else 0
 
     return {
-        "domain": domain,
-        "formato": formato,
+        "width": width,
+        "url": url,
         "elapsed_time": elapsed_time,
         "req_per_second": req_per_second,
         "time_per_request": time_per_request,
@@ -39,76 +47,81 @@ def test_url(domain, formato, width):
 
 def compute_summary(results):
     """
-    Calcula as médias, o tempo máximo e o tempo mínimo dos resultados fornecidos.
+    Calcula as médias, o tempo máximo e o tempo mínimo dos resultados.
     """
-    summary = {
-        "avg_elapsed": 0,
-        "avg_req_sec": 0,
-        "avg_time_req": 0,
-        "avg_transfer": 0,
-        "avg_image_size": 0,
-        "max_elapsed": float('-inf'),
-        "min_elapsed": float('inf'),
-        "count": 0
-    }
+    total_time = 0
+    total_req = 0
+    total_time_req = 0
+    total_transfer = 0
+    total_image_size = 0
+    count = len(results)
+    max_time = float('-inf')
+    min_time = float('inf')
+
     for res in results:
-        summary["avg_elapsed"] += res["elapsed_time"]
-        summary["avg_req_sec"] += res["req_per_second"]
-        summary["avg_time_req"] += res["time_per_request"]
-        summary["avg_transfer"] += res["transfer_rate"]
-        summary["avg_image_size"] += res["image_size"]
-        summary["max_elapsed"] = max(summary["max_elapsed"], res["elapsed_time"])
-        summary["min_elapsed"] = min(summary["min_elapsed"], res["elapsed_time"])
-        summary["count"] += 1
+        total_time += res["elapsed_time"]
+        total_req += res["req_per_second"]
+        total_time_req += res["time_per_request"]
+        total_transfer += res["transfer_rate"]
+        total_image_size += res["image_size"]
+        max_time = max(max_time, res["elapsed_time"])
+        min_time = min(min_time, res["elapsed_time"])
 
-    if summary["count"] > 0:
-        summary["avg_elapsed"] /= summary["count"]
-        summary["avg_req_sec"] /= summary["count"]
-        summary["avg_time_req"] /= summary["count"]
-        summary["avg_transfer"] /= summary["count"]
-        summary["avg_image_size"] /= summary["count"]
-
-    return summary
+    return {
+        "avg_elapsed": total_time / count,
+        "avg_req_sec": total_req / count,
+        "avg_time_req": total_time_req / count,
+        "avg_transfer": total_transfer / count,
+        "avg_image_size": total_image_size / count,
+        "max_elapsed": max_time,
+        "min_elapsed": min_time
+    }
 
 def main():
-    widths = range(1000, 1200)  # Range de larguras para teste
-    all_results = []
+    # Validação dos argumentos
+    if len(sys.argv) != 3:
+        print("Uso: python bench.py [platform] [format]")
+        print("Exemplo: python bench.py domain1 webp")
+        sys.exit(1)
 
-    # Executa os testes em paralelo para cada combinação de domínio, formato e largura
+    domain = sys.argv[1]
+    formato = sys.argv[2]
+
+    if domain not in urls:
+        print(f"Plataforma '{domain}' não encontrada. As opções são: {', '.join(urls.keys())}.")
+        sys.exit(1)
+    if formato not in urls[domain]:
+        print(f"Formato '{formato}' não disponível para '{domain}'. As opções são: {', '.join(urls[domain].keys())}.")
+        sys.exit(1)
+
+    # Intervalo de larguras para o teste
+    widths = range(1000, 1200)
+    results = []
+
+    print(f"Executando benchmark para {domain} no formato {formato}...\n")
+    print(f"{'Width':<8} {'URL':<40} {'Tempo Total':<12} {'Req/s':<10} {'Tempo/Req':<12} {'Taxa Transf.':<14} {'Tamanho (Bytes)':<16}")
+    print("-" * 120)
+
+    # Executa os testes em paralelo
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        futures = []
-        for domain in urls:
-            for formato in urls[domain]:
-                for width in widths:
-                    futures.append(executor.submit(test_url, domain, formato, width))
+        futures = [executor.submit(test_url, domain, formato, width) for width in widths]
         for future in concurrent.futures.as_completed(futures):
-            all_results.append(future.result())
+            res = future.result()
+            results.append(res)
+            print(f"{res['width']:<8} {res['url'][:38]:<40} {res['elapsed_time']:.2f}s     "
+                  f"{res['req_per_second']:.2f}    {res['time_per_request']:.2f} ms   "
+                  f"{res['transfer_rate']:.2f} kB/s   {res['image_size']:<16}")
 
-    # Agrupar os resultados por domínio e formato
-    results_by_combo = defaultdict(lambda: defaultdict(list))
-    for res in all_results:
-        results_by_combo[res["domain"]][res["formato"]].append(res)
+    # Calcula e exibe o resumo final
+    summary = compute_summary(results)
+    print("\nResumo Final:")
+    print(f"  Média do Tempo Total: {summary['avg_elapsed']:.2f}s")
+    print(f"  Média de Req/s: {summary['avg_req_sec']:.2f}")
+    print(f"  Média do Tempo por Requisição: {summary['avg_time_req']:.2f}ms")
+    print(f"  Média da Taxa de Transferência: {summary['avg_transfer']:.2f} kB/s")
+    print(f"  Média do Tamanho da Imagem: {summary['avg_image_size']:.2f} Bytes")
+    print(f"  Tempo Máximo: {summary['max_elapsed']:.2f}s")
+    print(f"  Tempo Mínimo: {summary['min_elapsed']:.2f}s")
 
-    # Montar e exibir a comparação final (benchmark) para cada formato em cada domínio
-    final_summary = {}
-    for domain in results_by_combo:
-        final_summary[domain] = {}
-        for formato in results_by_combo[domain]:
-            summary = compute_summary(results_by_combo[domain][formato])
-            final_summary[domain][formato] = summary
-
-    # Exibir os resultados finais
-    for domain in sorted(final_summary.keys()):
-        print(f"\nBenchmark para {domain}:")
-        for formato in sorted(final_summary[domain].keys()):
-            summary = final_summary[domain][formato]
-            print(f"  Formato: {formato}")
-            print(f"    Média do Tempo Total: {summary['avg_elapsed']:.2f}s")
-            print(f"    Média de Req/s: {summary['avg_req_sec']:.2f}")
-            print(f"    Média do Tempo por Requisição: {summary['avg_time_req']:.2f}ms")
-            print(f"    Média da Taxa de Transferência: {summary['avg_transfer']:.2f} kB/s")
-            print(f"    Média do Tamanho da Imagem: {summary['avg_image_size']:.2f} Bytes")
-            print(f"    Tempo Máximo: {summary['max_elapsed']:.2f}s")
-            print(f"    Tempo Mínimo: {summary['min_elapsed']:.2f}s")
-    
-main()
+if __name__ == "__main__":
+    main()
