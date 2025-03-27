@@ -4,6 +4,7 @@ use std::io::Cursor;
 use webp::{Encoder as WebPEncoder, PixelLayout};
 use fast_image_resize::{self as fir, IntoImageView};
 use fast_image_resize::images::Image;
+use ravif::{self, Img};
 
 pub async fn process_image(
     image_data: &[u8],
@@ -82,15 +83,39 @@ pub async fn process_image(
 
     let mut buf = Vec::new();
 
-    // Codificação específica para WebP
-    if current_format == format || ImageFormat::WebP != format {
-        img.write_to(&mut Cursor::new(&mut buf), format)?;
-    } else {
-        let rgba = img.to_rgba8();
-        let encoder = WebPEncoder::new(&rgba, PixelLayout::Rgba, img.width(), img.height());
-        let quality = quality as f32;
-        let webp_data = encoder.encode(quality);
-        buf = webp_data.as_bytes().to_vec();
+    match format {
+        ImageFormat::WebP if current_format != ImageFormat::WebP => {
+            let rgba = img.to_rgba8();
+            let encoder = WebPEncoder::new(&rgba, PixelLayout::Rgba, img.width(), img.height());
+            let quality = quality as f32;
+            let webp_data = encoder.encode(quality);
+            buf = webp_data.as_bytes().to_vec();
+        }
+        ImageFormat::Avif => {
+            let rgba = img.to_rgba8();
+            let (width, height) = rgba.dimensions();
+
+            let pixels: Vec<rgb::RGBA8> = rgba.pixels()
+                .map(|p| rgb::RGBA8 {
+                    r: p.0[0],
+                    g: p.0[1],
+                    b: p.0[2],
+                    a: p.0[3],
+                })
+                .collect();
+            
+            let img_ref = Img::new(&pixels[..], width.try_into().unwrap(), height.try_into().unwrap());
+
+            let encoder = ravif::Encoder::new()
+                .with_quality(quality as f32)
+                .with_speed(5);
+            let encoded = encoder
+                .encode_rgba(img_ref).unwrap();
+            buf = encoded.avif_file;
+        }
+        _ => {
+            img.write_to(&mut Cursor::new(&mut buf), format)?;
+        }
     }
     println!("Time to encode image: {} ms", start_encode.elapsed().as_millis());
 

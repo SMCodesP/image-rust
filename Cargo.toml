@@ -12,6 +12,7 @@ base64 = "0.22.1"
 fast_image_resize = { version = "5.1.2", features = ["image"] }
 image = { version = "0.25.5", features = ["webp", "avif"] }
 lambda_runtime = "0.13.0"
+ravif = "0.11.11"
 serde_json = "1.0.140"
 tokio = { version = "1.44.1", features = ["full"] }
 webp = "0.3.0"
