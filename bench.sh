@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # URL base
-base_url="https://d270zblqqzt1pj.cloudfront.net/media/dealerships/16/vehicles/410/d60c3553bac14b94912ae35602154e12.webp?width="
+base_url="https://d270zblqqzt1pj.cloudfront.net/media/dealerships/18/vehicles/190/f7b84be8a0a84342ac172aa8dac0bcbe.webp?format=webp&width="
 
 # Número de requisições (1 por URL)
 num_requests=1
@@ -26,7 +26,7 @@ printf "%-20s | %-10s | %-12s | %-12s | %-12s\n" "URL" "Tempo Total" "Req/s" "Te
 echo "--------------------------------------------------------------------"
 
 # Loop para testar a URL com largura variando de 400 até 600
-for width in {450..650}; do
+for width in {1090..1200}; do
     url="${base_url}${width}&format=webp"
     echo "Testando URL: $url" >&2
     output=$(ab -n $num_requests -c 1 "$url" 2>/dev/null)
