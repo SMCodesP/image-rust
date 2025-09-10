@@ -5,14 +5,14 @@ import sys
 
 urls = {
     "codes": {
-        "webp": "https://d270zblqqzt1pj.cloudfront.net/media/dealerships/17/vehicles/201/ed3c2f00fa69494198fd6122c1f23966.webp?format=webp&width=",
-        "avif": "https://d270zblqqzt1pj.cloudfront.net/media/dealerships/17/vehicles/201/ed3c2f00fa69494198fd6122c1f23966.webp?format=avif&width=",
-        "jpeg": "https://d270zblqqzt1pj.cloudfront.net/media/dealerships/17/vehicles/201/ed3c2f00fa69494198fd6122c1f23966.webp?format=jpeg&width="
+        "webp": "https://d270zblqqzt1pj.cloudfront.net/media/dealerships/17/vehicles/336/4bd33f155717406bb6ae98a39aa47b7b.webp?format=webp&width=",
+        "avif": "https://d270zblqqzt1pj.cloudfront.net/media/dealerships/17/vehicles/336/4bd33f155717406bb6ae98a39aa47b7b.webp?format=avif&width=",
+        "jpeg": "https://d270zblqqzt1pj.cloudfront.net/media/dealerships/17/vehicles/336/4bd33f155717406bb6ae98a39aa47b7b.webp?format=jpeg&width="
     },
     "aws": {
-        "webp": "https://d2w2hn5e1sejqe.cloudfront.net/media/dealerships/17/vehicles/201/ed3c2f00fa69494198fd6122c1f23966.webp?format=webp&width=",
-        "avif": "https://d2w2hn5e1sejqe.cloudfront.net/media/dealerships/17/vehicles/201/ed3c2f00fa69494198fd6122c1f23966.webp?format=avif&width=",
-        "jpeg": "https://d2w2hn5e1sejqe.cloudfront.net/media/dealerships/17/vehicles/201/ed3c2f00fa69494198fd6122c1f23966.webp?format=jpeg&width="
+        "webp": "https://d2w2hn5e1sejqe.cloudfront.net/media/dealerships/17/vehicles/336/4bd33f155717406bb6ae98a39aa47b7b.webp?format=webp&width=",
+        "avif": "https://d2w2hn5e1sejqe.cloudfront.net/media/dealerships/17/vehicles/336/4bd33f155717406bb6ae98a39aa47b7b.webp?format=avif&width=",
+        "jpeg": "https://d2w2hn5e1sejqe.cloudfront.net/media/dealerships/17/vehicles/336/4bd33f155717406bb6ae98a39aa47b7b.webp?format=jpeg&width="
     }
 }
 
@@ -26,7 +26,7 @@ def test_url(domain, formato, width):
       - Taxa de transferência (kB/s)
       - Tamanho da imagem (Bytes)
     """
-    url = f"{urls[domain][formato]}{width}"
+    url = f"{urls[domain][formato]}{width}&"
     start_time = time.time()
     response = requests.get(url)
     elapsed_time = time.time() - start_time
@@ -103,7 +103,7 @@ def main():
     print("-" * 120)
 
     # Executa os testes em paralelo
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=40) as executor:
         futures = [executor.submit(test_url, domain, formato, width) for width in widths]
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
