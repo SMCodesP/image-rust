@@ -108,7 +108,7 @@ pub async fn process_image(
 
             let encoder = ravif::Encoder::new()
                 .with_quality(quality as f32)
-                .with_speed(5);
+                .with_speed(10);
             let encoded = encoder
                 .encode_rgba(img_ref).unwrap();
             buf = encoded.avif_file;
