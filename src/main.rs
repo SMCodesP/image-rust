@@ -7,6 +7,7 @@ use aws_sdk_s3::Client as S3Client;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use lambda_runtime::{service_fn, LambdaEvent, Error as LambdaError};
 use serde_json::{json, Value};
+use percent_encoding::{percent_decode};
 
 const TRANSFORMED_IMAGE_CACHE_TTL: &str = "max-age=3600";
 
@@ -26,6 +27,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     let s3_client = create_s3_client().await;
     println!("Time to create S3 client: {} ms", start_client.elapsed().as_millis());
     
+    println!("Downloading image: {}", original_path);
     let start_download = Instant::now();
     let (image_data, content_type) = download_original_image(&s3_client, &original_path).await?;
     println!("Time to download image: {} ms", start_download.elapsed().as_millis());
@@ -65,7 +67,7 @@ async fn background_processing(
     
     client
         .put_object()
-        .bucket("comprautos-static-optimized")
+        .bucket("blog-system-static-optimized")
         .key(target_path)
         .content_type(&content_type)
         .body(image_data.into())
@@ -75,11 +77,15 @@ async fn background_processing(
     Ok(())
 }
 
-// Componentes refatorados
+fn decode_url_path(path: &str) -> String {
+    return percent_decode(path.as_bytes()).decode_utf8_lossy().to_string();
+}
+
 fn extract_path_components(path: &str) -> (&str, String) {
     let mut parts: Vec<_> = path.split('/').collect();
     let operations = parts.pop().unwrap_or("");
-    let original_path = parts[1..].join("/");
+    let original_path_encoded = parts[1..].join("/");
+    let original_path = decode_url_path(&original_path_encoded);
     (operations, original_path)
 }
 
@@ -91,8 +97,8 @@ async fn create_s3_client() -> S3Client {
 async fn download_original_image(client: &S3Client, path: &str) -> Result<(Vec<u8>, String), LambdaError> {
     let response = client
         .get_object()
-        .bucket("comprautos-static")
-        .key(path)
+        .bucket("blog-system-media")
+        .key(path)  // Aqui vai o path com 'à' original
         .send()
         .await?;
 

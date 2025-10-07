@@ -1,5 +1,5 @@
 [package]
-name = "image_rust"
+name = "blog-image-processor"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,6 +12,7 @@ base64 = "0.22.1"
 fast_image_resize = { version = "5.3.0", features = ["image"] }
 image = { version = "0.25.8", features = ["webp", "avif"] }
 lambda_runtime = "0.13.0"
+percent-encoding = "2.3.2"
 ravif = "0.12.0"
 rgb = "0.8.52"
 serde_json = "1.0.140"
