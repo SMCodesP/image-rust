@@ -5,10 +5,12 @@ use std::time::Instant;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
 use base64::{prelude::BASE64_STANDARD, Engine};
-use lambda_runtime::{service_fn, LambdaEvent, Error as LambdaError};
+use lambda_runtime::{service_fn, Error as LambdaError, LambdaEvent};
 use serde_json::{json, Value};
 
 const TRANSFORMED_IMAGE_CACHE_TTL: &str = "max-age=3600";
+const S3_BUCKET_ORIGINAL: &str = "mw-cms-media";
+const S3_BUCKET_OPTIMIZED: &str = "mw-cms-optimized";
 
 #[tokio::main]
 async fn main() -> Result<(), LambdaError> {
@@ -19,17 +21,24 @@ async fn main() -> Result<(), LambdaError> {
 async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     let (event, _) = event.into_parts();
     let path = event["rawPath"].as_str().unwrap_or("/");
-    
+
     let (operations, original_path) = extract_path_components(path);
 
     let start_client = Instant::now();
     let s3_client = create_s3_client().await;
-    println!("Time to create S3 client: {} ms", start_client.elapsed().as_millis());
-    
+    println!(
+        "Time to create S3 client: {} ms",
+        start_client.elapsed().as_millis()
+    );
+
     let start_download = Instant::now();
     let (image_data, content_type) = download_original_image(&s3_client, &original_path).await?;
-    println!("Time to download image: {} ms", start_download.elapsed().as_millis());
-    let processed_image = image_processor::process_image(&image_data, &content_type, operations).await?;
+    println!(
+        "Time to download image: {} ms",
+        start_download.elapsed().as_millis()
+    );
+    let processed_image =
+        image_processor::process_image(&image_data, &content_type, operations).await?;
 
     let bg_client = s3_client.clone();
     let bg_path = original_path.clone();
@@ -39,17 +48,16 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
 
     let start_background = Instant::now();
     tokio::spawn(async move {
-        if let Err(e) = background_processing(
-            bg_client,
-            bg_path,
-            bg_ops,
-            bg_image,
-            bg_content_type
-        ).await {
+        if let Err(e) =
+            background_processing(bg_client, bg_path, bg_ops, bg_image, bg_content_type).await
+        {
             eprintln!("Background processing failed: {:?}", e);
         }
     });
-    println!("Time to start background processing: {} ms", start_background.elapsed().as_millis());
+    println!(
+        "Time to start background processing: {} ms",
+        start_background.elapsed().as_millis()
+    );
 
     Ok(build_response(200, &content_type, &processed_image))
 }
@@ -62,10 +70,10 @@ async fn background_processing(
     content_type: String,
 ) -> Result<(), LambdaError> {
     let target_path = format!("{}/{}", original_path, operations);
-    
+
     client
         .put_object()
-        .bucket("comprautos-static-optimized")
+        .bucket(S3_BUCKET_OPTIMIZED)
         .key(target_path)
         .content_type(&content_type)
         .body(image_data.into())
@@ -88,15 +96,21 @@ async fn create_s3_client() -> S3Client {
     S3Client::new(&shared_config)
 }
 
-async fn download_original_image(client: &S3Client, path: &str) -> Result<(Vec<u8>, String), LambdaError> {
+async fn download_original_image(
+    client: &S3Client,
+    path: &str,
+) -> Result<(Vec<u8>, String), LambdaError> {
     let response = client
         .get_object()
-        .bucket("comprautos-static")
+        .bucket(S3_BUCKET_ORIGINAL)
         .key(path)
         .send()
         .await?;
 
-    let content_type = response.content_type().unwrap_or("application/octet-stream").to_string();
+    let content_type = response
+        .content_type()
+        .unwrap_or("application/octet-stream")
+        .to_string();
     let data = response.body.collect().await?.to_vec();
     Ok((data, content_type))
 }

@@ -1,4 +1,4 @@
-use image::{DynamicImage, EncodableLayout, GenericImageView, ImageBuffer, ImageError, ImageFormat, Rgb, Rgba};
+use image::{DynamicImage, EncodableLayout, GenericImageView, ImageBuffer, ImageError, ImageFormat, Luma, Rgb, Rgba};
 use std::{collections::HashMap, time::Instant};
 use std::io::Cursor;
 use webp::{Encoder as WebPEncoder, PixelLayout};
@@ -46,6 +46,8 @@ pub async fn process_image(
                 .round() as u32;
 
             let pixel_type = img.pixel_type().expect("Failed to get pixel type");
+            
+            println!("Pixel type: {:?}", pixel_type);
 
             let mut dst_image = Image::new(target_width, target_height, pixel_type);
 
@@ -57,6 +59,11 @@ pub async fn process_image(
             let dst_buf = dst_image.into_vec();
 
             img = match pixel_type {
+                fir::PixelType::U8x2 => {
+                    let buf = ImageBuffer::<Luma<u8>, _>::from_raw(target_width, target_height, dst_buf)
+                        .expect("Failed to create grayscale image");
+                    DynamicImage::ImageLuma8(buf)
+                }
                 fir::PixelType::U8x3 => {
                     let buf = ImageBuffer::<Rgb<u8>, _>::from_raw(target_width, target_height, dst_buf)
                         .expect("Failed to create RGB image");
@@ -78,7 +85,8 @@ pub async fn process_image(
         Some(&"png") => ImageFormat::Png,
         Some(&"webp") => ImageFormat::WebP,
         Some(&"avif") => ImageFormat::Avif,
-        _ => ImageFormat::Jpeg,
+        Some(&"jpg") => ImageFormat::Jpeg,
+        _ => ImageFormat::WebP,
     };
 
     let mut buf = Vec::new();
@@ -87,8 +95,7 @@ pub async fn process_image(
         ImageFormat::WebP if current_format != ImageFormat::WebP => {
             let rgba = img.to_rgba8();
             let encoder = WebPEncoder::new(&rgba, PixelLayout::Rgba, img.width(), img.height());
-            let quality = quality as f32;
-            let webp_data = encoder.encode(quality);
+            let webp_data = encoder.encode(quality as f32);
             buf = webp_data.as_bytes().to_vec();
         }
         ImageFormat::Avif => {
@@ -108,7 +115,7 @@ pub async fn process_image(
 
             let encoder = ravif::Encoder::new()
                 .with_quality(quality as f32)
-                .with_speed(5);
+                .with_speed(10);
             let encoded = encoder
                 .encode_rgba(img_ref).unwrap();
             buf = encoded.avif_file;
