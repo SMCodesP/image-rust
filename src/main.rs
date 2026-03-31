@@ -6,6 +6,7 @@ use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use lambda_runtime::{service_fn, Error as LambdaError, LambdaEvent};
+use percent_encoding::percent_decode;
 use serde_json::{json, Value};
 
 const TRANSFORMED_IMAGE_CACHE_TTL: &str = "max-age=3600";
@@ -39,7 +40,8 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
         start_download.elapsed().as_millis()
     );
 
-    let should_transform = is_transformable_content_type(&content_type) && operations != ORIGINAL_OPERATION;
+    let should_transform =
+        is_transformable_content_type(&content_type) && operations != ORIGINAL_OPERATION;
     let (processed_image, cache_operation) = if should_transform {
         match image_processor::process_image(&image_data, &content_type, operations).await {
             Ok(image) => (image, operations.to_string()),
@@ -101,11 +103,17 @@ async fn background_processing(
     Ok(())
 }
 
-// Componentes refatorados
+fn decode_url_path(path: &str) -> String {
+    return percent_decode(path.as_bytes())
+        .decode_utf8_lossy()
+        .to_string();
+}
+
 fn extract_path_components(path: &str) -> (&str, String) {
     let mut parts: Vec<_> = path.split('/').collect();
     let operations = parts.pop().unwrap_or("");
-    let original_path = parts[1..].join("/");
+    let original_path_encoded = parts[1..].join("/");
+    let original_path = decode_url_path(&original_path_encoded);
     (operations, original_path)
 }
 
