@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 const TRANSFORMED_IMAGE_CACHE_TTL: &str = "max-age=3600";
 const S3_BUCKET_ORIGINAL: &str = "mw-cms-media";
 const S3_BUCKET_OPTIMIZED: &str = "mw-cms-optimized";
+const ORIGINAL_OPERATION: &str = "original";
 
 #[tokio::main]
 async fn main() -> Result<(), LambdaError> {
@@ -37,12 +38,29 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
         "Time to download image: {} ms",
         start_download.elapsed().as_millis()
     );
-    let processed_image =
-        image_processor::process_image(&image_data, &content_type, operations).await?;
+
+    let should_transform = is_transformable_content_type(&content_type) && operations != ORIGINAL_OPERATION;
+    let (processed_image, cache_operation) = if should_transform {
+        match image_processor::process_image(&image_data, &content_type, operations).await {
+            Ok(image) => (image, operations.to_string()),
+            Err(error) => {
+                eprintln!(
+                    "Image transform failed for '{original_path}' with operations '{operations}': {error}. Returning original file."
+                );
+                (image_data.clone(), ORIGINAL_OPERATION.to_string())
+            }
+        }
+    } else {
+        println!(
+            "Bypassing transformation for content-type '{}' and path '{}'",
+            content_type, original_path
+        );
+        (image_data.clone(), ORIGINAL_OPERATION.to_string())
+    };
 
     let bg_client = s3_client.clone();
     let bg_path = original_path.clone();
-    let bg_ops = operations.to_string();
+    let bg_ops = cache_operation;
     let bg_image = processed_image.clone();
     let bg_content_type = content_type.clone();
 
@@ -125,4 +143,14 @@ fn build_response(status: u16, content_type: &str, body: &[u8]) -> Value {
         "body": BASE64_STANDARD.encode(body),
         "isBase64Encoded": true
     })
+}
+
+fn is_transformable_content_type(content_type: &str) -> bool {
+    let normalized = content_type.to_ascii_lowercase();
+
+    normalized.starts_with("image/jpeg")
+        || normalized.starts_with("image/jpg")
+        || normalized.starts_with("image/png")
+        || normalized.starts_with("image/webp")
+        || normalized.starts_with("image/avif")
 }
