@@ -43,8 +43,8 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     let should_transform =
         is_transformable_content_type(&content_type) && operations != ORIGINAL_OPERATION;
     let (processed_image, cache_operation) = if should_transform {
-        match image_processor::process_image(&image_data, &content_type, operations).await {
-            Ok(image) => (image, operations.to_string()),
+        match image_processor::process_image(&image_data, &content_type, &operations).await {
+            Ok(image) => (image, operations.clone()),
             Err(error) => {
                 eprintln!(
                     "Image transform failed for '{original_path}' with operations '{operations}': {error}. Returning original file."
@@ -66,7 +66,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     let bg_image = processed_image.clone();
     let bg_content_type = content_type.clone();
 
-    let start_background = Instant::now();
+    let start_cache_write = Instant::now();
     tokio::spawn(async move {
         if let Err(e) =
             background_processing(bg_client, bg_path, bg_ops, bg_image, bg_content_type).await
@@ -76,7 +76,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     });
     println!(
         "Time to start background processing: {} ms",
-        start_background.elapsed().as_millis()
+        start_cache_write.elapsed().as_millis()
     );
 
     Ok(build_response(200, &content_type, &processed_image))
@@ -109,12 +109,50 @@ fn decode_url_path(path: &str) -> String {
         .to_string();
 }
 
-fn extract_path_components(path: &str) -> (&str, String) {
-    let mut parts: Vec<_> = path.split('/').collect();
-    let operations = parts.pop().unwrap_or("");
-    let original_path_encoded = parts[1..].join("/");
-    let original_path = decode_url_path(&original_path_encoded);
-    (operations, original_path)
+fn extract_path_components(path: &str) -> (String, String) {
+    let trimmed = path.trim_start_matches('/');
+    if trimmed.is_empty() {
+        return (ORIGINAL_OPERATION.to_string(), String::new());
+    }
+
+    let mut parts: Vec<&str> = trimmed
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    if parts.is_empty() {
+        return (ORIGINAL_OPERATION.to_string(), String::new());
+    }
+
+    let last_segment = parts[parts.len() - 1];
+    if is_operation_segment(last_segment) {
+        parts.pop();
+        let original_path = decode_url_path(&parts.join("/"));
+        return (last_segment.to_string(), original_path);
+    }
+
+    let original_path = decode_url_path(&parts.join("/"));
+    (ORIGINAL_OPERATION.to_string(), original_path)
+}
+
+fn is_operation_segment(segment: &str) -> bool {
+    if segment.eq_ignore_ascii_case(ORIGINAL_OPERATION) {
+        return true;
+    }
+
+    if !segment.contains('=') {
+        return false;
+    }
+
+    segment.split(',').all(|part| {
+        let mut kv = part.splitn(2, '=');
+        matches!(
+            (kv.next(), kv.next()),
+            (Some("format"), Some(_))
+                | (Some("width"), Some(_))
+                | (Some("height"), Some(_))
+                | (Some("quality"), Some(_))
+        )
+    })
 }
 
 async fn create_s3_client() -> S3Client {
