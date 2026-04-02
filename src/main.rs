@@ -6,13 +6,11 @@ use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client as S3Client;
 use base64::{prelude::BASE64_STANDARD, Engine};
 use lambda_runtime::{service_fn, Error as LambdaError, LambdaEvent};
-use percent_encoding::percent_decode;
 use serde_json::{json, Value};
 
 const TRANSFORMED_IMAGE_CACHE_TTL: &str = "max-age=3600";
 const S3_BUCKET_ORIGINAL: &str = "mw-cms-media";
 const S3_BUCKET_OPTIMIZED: &str = "mw-cms-optimized";
-const ORIGINAL_OPERATION: &str = "original";
 
 #[tokio::main]
 async fn main() -> Result<(), LambdaError> {
@@ -39,34 +37,16 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
         "Time to download image: {} ms",
         start_download.elapsed().as_millis()
     );
-
-    let should_transform =
-        is_transformable_content_type(&content_type) && operations != ORIGINAL_OPERATION;
-    let (processed_image, cache_operation) = if should_transform {
-        match image_processor::process_image(&image_data, &content_type, &operations).await {
-            Ok(image) => (image, operations.clone()),
-            Err(error) => {
-                eprintln!(
-                    "Image transform failed for '{original_path}' with operations '{operations}': {error}. Returning original file."
-                );
-                (image_data.clone(), ORIGINAL_OPERATION.to_string())
-            }
-        }
-    } else {
-        println!(
-            "Bypassing transformation for content-type '{}' and path '{}'",
-            content_type, original_path
-        );
-        (image_data.clone(), ORIGINAL_OPERATION.to_string())
-    };
+    let processed_image =
+        image_processor::process_image(&image_data, &content_type, operations).await?;
 
     let bg_client = s3_client.clone();
     let bg_path = original_path.clone();
-    let bg_ops = cache_operation;
+    let bg_ops = operations.to_string();
     let bg_image = processed_image.clone();
     let bg_content_type = content_type.clone();
 
-    let start_cache_write = Instant::now();
+    let start_background = Instant::now();
     tokio::spawn(async move {
         if let Err(e) =
             background_processing(bg_client, bg_path, bg_ops, bg_image, bg_content_type).await
@@ -76,7 +56,7 @@ async fn handler(event: LambdaEvent<Value>) -> Result<Value, LambdaError> {
     });
     println!(
         "Time to start background processing: {} ms",
-        start_cache_write.elapsed().as_millis()
+        start_background.elapsed().as_millis()
     );
 
     Ok(build_response(200, &content_type, &processed_image))
@@ -103,56 +83,12 @@ async fn background_processing(
     Ok(())
 }
 
-fn decode_url_path(path: &str) -> String {
-    return percent_decode(path.as_bytes())
-        .decode_utf8_lossy()
-        .to_string();
-}
-
-fn extract_path_components(path: &str) -> (String, String) {
-    let trimmed = path.trim_start_matches('/');
-    if trimmed.is_empty() {
-        return (ORIGINAL_OPERATION.to_string(), String::new());
-    }
-
-    let mut parts: Vec<&str> = trimmed
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
-    if parts.is_empty() {
-        return (ORIGINAL_OPERATION.to_string(), String::new());
-    }
-
-    let last_segment = parts[parts.len() - 1];
-    if is_operation_segment(last_segment) {
-        parts.pop();
-        let original_path = decode_url_path(&parts.join("/"));
-        return (last_segment.to_string(), original_path);
-    }
-
-    let original_path = decode_url_path(&parts.join("/"));
-    (ORIGINAL_OPERATION.to_string(), original_path)
-}
-
-fn is_operation_segment(segment: &str) -> bool {
-    if segment.eq_ignore_ascii_case(ORIGINAL_OPERATION) {
-        return true;
-    }
-
-    if !segment.contains('=') {
-        return false;
-    }
-
-    segment.split(',').all(|part| {
-        let mut kv = part.splitn(2, '=');
-        matches!(
-            (kv.next(), kv.next()),
-            (Some("format"), Some(_))
-                | (Some("width"), Some(_))
-                | (Some("height"), Some(_))
-                | (Some("quality"), Some(_))
-        )
-    })
+// Componentes refatorados
+fn extract_path_components(path: &str) -> (&str, String) {
+    let mut parts: Vec<_> = path.split('/').collect();
+    let operations = parts.pop().unwrap_or("");
+    let original_path = parts[1..].join("/");
+    (operations, original_path)
 }
 
 async fn create_s3_client() -> S3Client {
@@ -189,14 +125,4 @@ fn build_response(status: u16, content_type: &str, body: &[u8]) -> Value {
         "body": BASE64_STANDARD.encode(body),
         "isBase64Encoded": true
     })
-}
-
-fn is_transformable_content_type(content_type: &str) -> bool {
-    let normalized = content_type.to_ascii_lowercase();
-
-    normalized.starts_with("image/jpeg")
-        || normalized.starts_with("image/jpg")
-        || normalized.starts_with("image/png")
-        || normalized.starts_with("image/webp")
-        || normalized.starts_with("image/avif")
 }
